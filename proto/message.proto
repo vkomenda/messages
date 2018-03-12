@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package message_stream_example.protocol;
+
+message Message {
+  enum MessageType {
+    VALUE = 0;
+    ECHO = 1;
+    READY = 2;
+  }
+  MessageType message_type = 1;
+  bytes root_hash = 2;
+  bytes value = 3;
+}
