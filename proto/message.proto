@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package message_stream_example.protocol;
+// package message_stream_example.protocol;
 
 message Message {
   enum MessageType {
@@ -11,4 +11,23 @@ message Message {
   MessageType message_type = 1;
   bytes root_hash = 2;
   bytes value = 3;
+  List list = 4;
+}
+
+// Unityped list of u32.
+message List {
+  oneof list {
+    ListNil nil = 1;
+    ListCons cons = 2;
+  }
+}
+
+// List constructor.
+message ListCons {
+  uint32 head = 1;
+  List tail = 2;
+}
+
+// List terminator.
+message ListNil {
 }

@@ -13,7 +13,7 @@ mod task;
 use std::net::{TcpStream, TcpListener, SocketAddr};
 use errors::ResultExt;
 use task::{Error, MessageLoop, Task};
-use proto::message::{Message, Message_MessageType};
+use proto::message::{Message, Message_MessageType, List};
 
 /// A client task is an instance of `Task`, a message-handling task with a main
 /// loop.
@@ -22,7 +22,7 @@ pub struct ClientTask {
 }
 
 impl ClientTask {
-    pub fn new(stream: TcpStream) -> ClientTask {
+    pub fn new(stream: TcpStream) -> Self {
         ClientTask {
             task: Task::new(stream)
         }
@@ -35,6 +35,10 @@ impl MessageLoop for ClientTask {
         request.set_message_type(Message_MessageType::VALUE);
         request.set_root_hash([1, 2, 3, 4, 5, 6].to_vec());
         request.set_value([7, 7, 7].to_vec());
+
+        let l: List = List::from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        request.set_list(l);
+
         self.task.send_message(&request).unwrap();
 
         loop {
@@ -52,12 +56,14 @@ impl MessageLoop for ClientTask {
     fn on_message_received(&mut self, message: Message) -> Result<(), Error> {
         match message.get_message_type() {
             Message_MessageType::VALUE => {
-                info!("VALUE({:?}, {:?}) received",
-                      message.get_root_hash(), message.get_value())
+                info!("VALUE({:?}, {:?}, {:?}) received",
+                      message.get_root_hash(), message.get_value(),
+                      message.get_list())
             },
             Message_MessageType::ECHO => {
-                info!("ECHO({:?}, {:?}) received",
-                      message.get_root_hash(), message.get_value())
+                info!("ECHO({:?}, {:?}, {:?}) received",
+                      message.get_root_hash(), message.get_value(),
+                      message.get_list())
             },
             Message_MessageType::READY => {
                 info!("READY({:?}) received", message.get_root_hash())
@@ -80,23 +86,30 @@ impl MessageLoop for ServerTask {
                 Ok(message) => self.on_message_received(message).unwrap(),
                 Err(Error::ProtobufError(e)) => warn!("Protobuf error {}", e),
                 Err(_e) => {
-                    warn!("Critical error"); // {}", e);
+                    warn!("Critical error");
                     break;
                 }
             }
         }
     }
 
+    /// Every received `VALUE` is echoed back to the sender with the contents of
+    /// the `list` field reversed.
     fn on_message_received(&mut self, message: Message) -> Result<(), Error> {
         match message.get_message_type() {
             Message_MessageType::VALUE => {
                 let h = message.get_root_hash();
                 let v = message.get_value();
-                info!("VALUE({:?}, {:?}) received", h, v);
+                let mut l = message.get_list().clone();
+                info!("VALUE({:?}, {:?}, {:?}) received", h, v, l);
                 let mut response: Message = Message::new();
                 response.set_message_type(Message_MessageType::ECHO);
                 response.set_root_hash(h.to_vec());
                 response.set_value(v.to_vec());
+
+                // Reverse the received list.
+                l.reverse();
+                response.set_list(l);
                 self.task.send_message(&response)?;
             },
             Message_MessageType::ECHO => {
@@ -112,7 +125,7 @@ impl MessageLoop for ServerTask {
 }
 
 impl ServerTask {
-    pub fn new(stream: TcpStream) -> ServerTask {
+    pub fn new(stream: TcpStream) -> Self {
         ServerTask {
             task: Task::new(stream)
         }
@@ -128,7 +141,7 @@ pub fn start_server(addr: &SocketAddr) -> Result<(), errors::Error> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                info!("New connection");
+                info!("New connection from {:?}", stream.peer_addr().unwrap());
                 std::thread::spawn(move || {
                     ServerTask::new(stream).run();
                 });
